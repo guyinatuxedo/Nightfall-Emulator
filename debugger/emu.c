@@ -3,6 +3,17 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <inttypes.h>
+
+#define menuInputSize 20
+#define memorySize 0xffff
+#define startStack 0x4000
+
+typedef struct breakpoints {
+	uint16_t breakp;
+	bool active;
+	struct breakpoints *next;
+} breakpoints;
 
 typedef struct cpu8080 {
 	// Arithmetic register
@@ -26,6 +37,7 @@ typedef struct cpu8080 {
 	bool parity;
 	bool zero1;
 	bool aux;
+	bool zero2;
 	bool zero;
 	bool sign;
 
@@ -34,7 +46,23 @@ typedef struct cpu8080 {
 	uint16_t pc;
 
 	// a ptr to the memory region
-	char *memory;
+	uint8_t *memory;
+
+	// a ptr to the breakpoints
+	breakpoints *breakpoints;
+
+	// a bool to indicate if it is running
+	bool running;
+
+	bool breaked;
+
+	// Here are some values, which will keep track of where the various regions of memeory are 
+	uint16_t memBeg;	// Beginning of entire memory region
+	uint16_t memEnd;	// End of entrie memory region
+	uint16_t codeBeg;	// Beginning of where code is loaded
+	uint16_t codeEnd;
+	uint16_t stackBeg;	// Beginning of the stack
+	// the end of the code is kept by codeEnd, and the end of the stack is kep by sp
 
 } cpu8080;
 
@@ -46,7 +74,7 @@ cpu8080 *createCpu(void)
 	cpu = calloc(1, sizeof(cpu8080));
 
 	// Allocate the memory for the cpu
-	cpu->memory = calloc(1, 0x10000);
+	cpu->memory = calloc(1, memorySize);
 
 	// Set the flags to their default values
 	cpu->carry = 0;
@@ -67,8 +95,19 @@ cpu8080 *createCpu(void)
 	cpu->l = 0x0;
 
 	// Initialize the stack pointer, and the program counter
-	cpu->sp = 0x4000;
+	cpu->sp = (uint16_t)startStack;
 	cpu->pc = 0x0;
+
+	cpu->breakpoints = NULL;
+
+	cpu->running = false;
+
+	cpu->breaked = false;
+
+	// Set the values for the memory locations
+	cpu->memBeg = (uint16_t)0;
+	cpu->memEnd = (uint16_t)memorySize;
+	cpu->stackBeg = (uint16_t)startStack;
 
 	return cpu;
 }
@@ -76,6 +115,8 @@ cpu8080 *createCpu(void)
 void setCode(cpu8080 *cpu, char *code, int size)
 {
 	memcpy(cpu->memory, code, size);
+	cpu->codeEnd = (size - 1);
+	cpu->codeBeg = 0x0;
 	return;
 }
 
@@ -111,6 +152,8 @@ void scanBinary(char *fileName, cpu8080 *cpu)
 	fclose(fp);
 
 	memcpy(cpu->memory, code, size);
+	cpu->codeBeg = 0x0;
+	cpu->codeEnd = (uint16_t)(size - 0x1);
 	return;
 }
 
@@ -372,10 +415,66 @@ int uintConvert(uint8_t x, uint8_t y)
 	return z;
 }
 
+int checkBreakPoint(breakpoints * breakpt, uint16_t x)
+{
+	if (breakpt->breakp == x && breakpt->active == true)
+	{
+		return 0;
+		puts("sam");
+	}
+	else if (breakpt->next != NULL)
+	{
+		return checkBreakPoint(breakpt->next, x);
+	}
+	else
+	{
+		return 1;
+	}
+}
 
+int isBreakPoint(cpu8080 *cpu)
+{
+	if (cpu->breakpoints == NULL)
+	{
+		return 1;
+	}
+	else
+	{
+		return checkBreakPoint(cpu->breakpoints, cpu->pc);
+	}
+}
+
+void resetExecution(cpu8080 *cpu)
+{
+	// Set the flags to their default values
+	cpu->carry = 0;
+	cpu->one = 1;
+	cpu->parity = 0;
+	cpu->zero = 0;
+	cpu->aux = 0;
+	cpu->zero1 = 0;
+	cpu->sign = 0;
+
+	// Set the registers to their default values
+	cpu->a = 0x0;
+	cpu->b = 0x0;
+	cpu->c = 0x0;
+	cpu->d = 0x0;
+	cpu->e = 0x0;
+	cpu->h = 0x0;
+	cpu->l = 0x0;
+
+	// Initialize the stack pointer, and the program counter
+	cpu->sp = startStack;
+	cpu->pc = 0x0;
+
+	cpu->running = false;
+	cpu->breaked = false;
+}
 
 void emulate(cpu8080 *cpu)
 {
+	int running;
 	uint8_t op;
 
 	uint8_t x0;
@@ -383,12 +482,21 @@ void emulate(cpu8080 *cpu)
 	uint16_t y;
 	uint32_t z;
 
-
-	puts("s");
-	for (cpu->pc = 0; cpu->pc < 5; cpu->pc++)
+	running = 0;
+	for (cpu->pc = cpu->pc; cpu->pc < 0x1000 && running == 0; cpu->pc++)
 	{
 		op = (uint8_t)cpu->memory[cpu->pc];
 		printf("%x\n", op);
+		if (isBreakPoint(cpu) == 0 && cpu->breaked == false)
+		{
+			printf("Breakpoint hit at 0x%x\n", (int)cpu->pc);
+			cpu->breaked = true;
+			return;
+		}
+		else
+		{
+			cpu->breaked = false;
+		}
 
 		switch (op)
 		{
@@ -1798,6 +1906,20 @@ void emulate(cpu8080 *cpu)
 				signFlag(cpu, x);
 				break;
 
+			// exit				
+			case 0xdd:
+				x = cpu->memory[cpu->pc + 1];
+				switch (x)
+				{
+					case 0x66:	
+						running = 1;
+						resetExecution(cpu);
+						printf("enjoyr your slay 0x%x\n", cpu->sp);
+						break;
+				}
+				break;
+
+
 
 			// rst 3
 			case 0xdf:
@@ -2018,7 +2140,355 @@ void emulate(cpu8080 *cpu)
 	}
 }
 
+/*
+7:	Sign (S Flag)	
+6:	Zero (Z Flag)
+5:	0 (It always holds the value 0)
+4:	Auxillary (AC or H Flag)
+3:	0 (It always holds the value 0)	
+2:	Parity (P Flag)	
+1:	1 (It always holds the value 1)
+0:	Carry (C Flag)
+*/
+uint8_t convertFlagsRegister(cpu8080 *cpu)
+{
+	uint8_t x = 0x2;
+	x = x | ((uint8_t)(cpu->sign == true) << 7);
+	x = x | ((uint8_t)(cpu->zero == true) << 6);
+	x = x | ((uint8_t)(cpu->aux == true) << 4);
+	x = x | ((uint8_t)(cpu->parity == true) << 2);
+	x = x | ((uint8_t)(cpu->carry == true) << 1);
+	return x;
+}
 
+void printFlags(cpu8080 *cpu)
+{
+	puts("\nFlags");
+	printf("7: Sign flag: %d\n", (int)cpu->sign);
+	printf("6: Zero flag: %d\n", (int)cpu->zero);
+	printf("5: zero1 flag (value shouldn't change): %d\n", cpu->zero1);
+	printf("4: Auxillary flag: %d\n", (int)cpu->aux);
+	printf("3: zero2 flag (value shouldn't change): %d\n", cpu->zero2);
+	printf("2: Parity flag: %d\n", (int)cpu->parity);
+	printf("1: one flag (value shouldn't change): %d\n", cpu->one);
+	printf("0: Carry flag: %d\n", (int)cpu->carry);
+}
+
+void printRegisters(cpu8080 *cpu)
+{
+	puts("8 bit registers");
+	printf("register a: 0x%x\n", (int)cpu->a);
+	printf("register b: 0x%x\n", (int)cpu->b);
+	printf("register c: 0x%x\n", (int)cpu->c);
+	printf("register d: 0x%x\n", (int)cpu->d);
+	printf("register e: 0x%x\n", (int)cpu->e);
+	printf("register h: 0x%x\n", (int)cpu->h);
+	printf("register l: 0x%x\n", (int)cpu->l);
+
+	puts("\n16 bit registers");
+	printf("register bc: 0x%x\n", (int)uintConvert(cpu->b, cpu->c));
+	printf("register de: 0x%x\n", (int)uintConvert(cpu->d, cpu->e));
+	printf("register hl: 0x%x\n", (int)uintConvert(cpu->h, cpu->l));
+	printf("register af: 0x%x\n", (int)uintConvert(cpu->a, convertFlagsRegister(cpu)));
+
+	printFlags(cpu);
+
+	puts("\nStack registers (16 bit)");
+	printf("register pc: 0x%x\n", (int)cpu->pc);
+	printf("register sp: 0x%x\n", (int)cpu->sp);
+	return;
+}
+
+char *removeBeginning(char *inp)
+{
+	int x, i;
+	char *result;
+
+	x = strlen(inp);
+	result = malloc(x);
+	for (i = 2; i < x; i++)
+	{
+		result[i - 2] = inp[i];
+	}
+	return result;
+}
+
+breakpoints *findLastBreakpoint(breakpoints *breakpoint)
+{
+	if (breakpoint == NULL)
+	{
+		return NULL;
+	}
+	else
+	{
+		if (breakpoint->next == NULL)
+		{
+			return breakpoint;
+		}
+		else
+		{
+			return findLastBreakpoint(breakpoint->next);
+		}
+	}
+}
+
+breakpoints *allocateBreakpoint(uint16_t x)
+{
+	breakpoints *b;
+	b = malloc(sizeof(breakpoints));
+	b->breakp = x;
+	b->next = NULL;
+	return b;
+}
+
+int charToInt(char * inp)
+{
+	char *arg;
+	int x;
+
+	arg = removeBeginning(inp);
+	if (strncmp(arg, "0x", 2) == 0)
+	{
+		puts("base 16");
+		x = strtoumax(arg, NULL, 16);
+
+	}
+	else
+	{
+		x = strtoumax(arg, NULL, 10);
+	}	
+}
+
+void createBreakpoint(cpu8080 *cpu, char *menuInput)
+{
+	char *arg;
+	int x;
+	breakpoints *last, *next;
+	last = findLastBreakpoint(cpu->breakpoints);
+
+	x = charToInt(menuInput);
+
+	next = allocateBreakpoint((uint16_t) x);
+	next->active = true;
+	if (last == NULL)
+	{
+		cpu->breakpoints = next;
+	}
+	else
+	{
+		last->next = next;
+	}
+}
+
+void showBreakpoints(breakpoints *breakpoint, int n)
+{
+	if (breakpoint == NULL)
+	{
+		return;
+	}
+	else
+	{
+		printf("Breakpoint %x at %x\t\t(active: %d)\n", n, breakpoint->breakp, (int)breakpoint->active);
+		return showBreakpoints(breakpoint->next, n + 1);
+	}
+}
+
+void deactivateBreakpoint(cpu8080 *cpu, char *menuInput)
+{
+	int i, n;
+	breakpoints *b;
+	b = cpu->breakpoints;
+
+	if (b == NULL)
+	{
+		puts("There are no breakpoints.");
+		return;
+	}
+
+	n = charToInt(menuInput);
+	for (i = 0; i < n; i++)
+	{
+		b = b->next;
+		if (b == NULL)
+		{
+			puts("That breakpoint doesn't exist");
+			return;
+		}
+	}
+
+	b->active = false;
+}
+
+
+void activateBreakpoint(cpu8080 *cpu, char *menuInput)
+{
+	int i, n;
+	breakpoints *b;
+	b = cpu->breakpoints;
+
+	if (b == NULL)
+	{
+		puts("There are no breakpoints.");
+		return;
+	}
+
+	n = charToInt(menuInput);
+	for (i = 0; i < n; i++)
+	{
+		b = b->next;
+		if (b == NULL)
+		{
+			puts("That breakpoint doesn't exist");
+			return;
+		}
+	}
+
+	b->active = true;
+}
+
+void printMemoryRegions(cpu8080 *cpu)
+{
+	printf("Total Memory Region:\t 0x%x - 0x%x\n", (int)cpu->memBeg, (int)cpu->memEnd);
+	printf("Code Memory Region:\t 0x%x - 0x%x\n", (int)cpu->codeBeg, (int)cpu->codeEnd);
+	printf("Stack Memory Region:\t 0x%x - 0x%x\n", (int)cpu->stackBeg, (int)cpu->sp);
+}
+
+void destroyCpu(cpu8080 *cpu)
+{
+	free(cpu->memory);
+	cpu->memory = 0;
+	free(cpu);
+	cpu = 0;
+	return;
+}
+
+void printRegister(cpu8080 *cpu, char *menuInput)
+{
+	char *arg;
+
+	arg = removeBeginning(menuInput);	
+
+	if (strncmp(arg, "bc", 2) == 0)
+	{
+		printf("register bc: 0x%x\n", (int)uintConvert(cpu->b, cpu->c));
+		return;
+	}
+
+	else if (strncmp(arg, "de", 2) == 0)
+	{
+		printf("register de: 0x%x\n", (int)uintConvert(cpu->b, cpu->c));
+		return;
+	}	
+
+	else if (strncmp(arg, "hl", 2) == 0)
+	{
+		printf("register hl: 0x%x\n", (int)uintConvert(cpu->h, cpu->l));
+		return;
+	}
+
+	else if (strncmp(arg, "af", 2) == 0)
+	{
+		printf("register af: 0x%x\n", (int)uintConvert(cpu->h, convertFlagsRegister(cpu)));
+		return;
+	}
+
+	else if (strncmp(arg, "pc", 2) == 0)
+	{
+		printf("register pc: 0x%x\n", (int)cpu->pc);
+		return;
+	}
+
+	else if (strncmp(arg, "sp", 2) == 0)
+	{
+		printf("register sp: 0x%x\n", (int)cpu->sp);
+		return;
+	}
+
+	switch(arg[0])
+	{
+		case 'a':
+			printf("register a: 0x%x\n", (uint16_t)cpu->a);
+			return;
+			break;
+		case 'b':
+			printf("register b: 0x%x\n", (uint16_t)cpu->b);
+			return;
+			break;
+		case 'c':
+			printf("register c: 0x%x\n", (uint16_t)cpu->c);
+			return;
+			break;
+		case 'd':
+			printf("register d: 0x%x\n", (uint16_t)cpu->d);
+			return;
+			break;
+		case 'e':
+			printf("register e: 0x%x\n", (uint16_t)cpu->e);
+			return;
+			break;
+		case 'h':
+			printf("register h: 0x%x\n", (uint16_t)cpu->h);
+			return;
+			break;
+		case 'l':
+			printf("register l: 0x%x\n", (uint16_t)cpu->l);
+			return;
+			break;
+		case 'f':
+			printFlags(cpu);
+			return;
+			break;
+	}
+}
+
+void menu(cpu8080 *cpu)
+{
+	uint16_t breakpoint;
+
+	char *menuChoice;
+	menuChoice = malloc(menuInputSize);
+	while (1)
+	{
+		printf("debugger> ");
+		fgets(menuChoice, menuInputSize - 1, stdin);
+		switch (menuChoice[0])
+		{
+			case 'r':
+				resetExecution(cpu);
+				emulate(cpu);
+				break;
+			case 'i':
+				printRegisters(cpu);
+				break;
+			case 'b':
+				createBreakpoint(cpu, menuChoice);
+				break;
+			case 's':
+				showBreakpoints(cpu->breakpoints, 0);
+				break;
+			case 'c':
+				emulate(cpu);
+				break;
+			case 'd':
+				deactivateBreakpoint(cpu, menuChoice);
+				break;
+			case 'a':
+				activateBreakpoint(cpu, menuChoice);
+				break;
+			case 'm':
+				printMemoryRegions(cpu);
+				break;
+			case 'q':
+				resetExecution(cpu);
+				destroyCpu(cpu);
+				return;
+				break;
+			case 'p':
+				printRegister(cpu, menuChoice);
+				break;
+		}
+	}
+}
 
 int main(int argc, char **argv)
 {
@@ -2035,7 +2505,7 @@ int main(int argc, char **argv)
 
 	scanBinary(argv[1], cpu);
 
-	emulate(cpu);
+	menu(cpu);
 
 	return 0;
 }
