@@ -46,6 +46,9 @@ typedef struct cpu8080 {
 	uint16_t sp;
 	uint16_t pc;
 
+	// a bit which controls whether interrupts can happen, currently don't use it for anything. 1 for allow, 0 for disable.
+	bool flipFlop;
+
 	// a ptr to the memory region
 	uint8_t *memory;
 
@@ -66,6 +69,8 @@ typedef struct cpu8080 {
 	// the end of the code is kept by codeEnd, and the end of the stack is kep by sp
 
 	bool disasAsExec; // A bool to keep track of whether or not to disassmble intructions as they are executed
+
+	uint8_t step; // A value to keep track of the staus of steeping through instructions, for the step instruction command
 
 } cpu8080;
 
@@ -100,6 +105,8 @@ cpu8080 *createCpu(void)
 	// Initialize the stack pointer, and the program counter
 	cpu->sp = (uint16_t)startStack;
 	cpu->pc = 0x0;
+
+	cpu->flipFlop = 1;
 
 	cpu->breakpoints = NULL;
 
@@ -160,6 +167,17 @@ void scanBinary(char *fileName, cpu8080 *cpu)
 	cpu->codeBeg = 0x0;
 	cpu->codeEnd = (uint16_t)(size - 0x1);
 	return;
+}
+
+uint8_t convertFlagsRegister(cpu8080 *cpu)
+{
+	uint8_t x = 0x2;
+	x = x | ((uint8_t)(cpu->sign == true) << 7);
+	x = x | ((uint8_t)(cpu->zero == true) << 6);
+	x = x | ((uint8_t)(cpu->aux == true) << 4);
+	x = x | ((uint8_t)(cpu->parity == true) << 2);
+	x = x | ((uint8_t)(cpu->carry == true) << 1);
+	return x;
 }
 
 void auxiliaryFlag(cpu8080 *cpu, uint8_t x, uint8_t y, uint8_t z)
@@ -259,7 +277,7 @@ void carryFlagSub(cpu8080 *cpu, uint16_t x)
 	}
 }
 
-void carryFlag16(cpu8080 *cpu, uint16_t x)
+void carryFlag16(cpu8080 *cpu, uint32_t x)
 {
 	if ((x & 0x10000) == 0)
 	{
@@ -334,6 +352,7 @@ void xor(cpu8080 *cpu, uint8_t x)
 
 	cpu->a = (uint8_t)z;
 }
+
 void add(cpu8080 *cpu, uint8_t x)
 {
 	uint16_t z = ((uint16_t)x + (cpu->a));
@@ -406,7 +425,41 @@ void sbb(cpu8080 *cpu, uint8_t x)
 	cpu->a = (uint8_t)z;
 }
 
-void push(cpu8080 *cpu, uint16_t x)
+void inr(cpu8080 *cpu, uint8_t *reg)
+{
+	(*reg) += 1;
+	zeroFlag(cpu, *reg);
+	signFlag(cpu, *reg);
+	parityFlag(cpu, *reg);
+	auxiliaryFlag(cpu, *reg, 1, 1);
+	carryFlag(cpu, *reg);
+}
+
+void dcr(cpu8080 *cpu, uint8_t *reg)
+{
+	(*reg) -= 1;
+	zeroFlag(cpu, *reg);
+	signFlag(cpu, *reg);
+	parityFlag(cpu, *reg);
+	auxiliaryFlag(cpu, *reg, 1, 0);
+	carryFlag(cpu, *reg);
+}
+
+void mvi(cpu8080 *cpu, uint8_t *reg, uint8_t arg)
+{
+	*(reg) = arg;
+	cpu->pc += 1;
+}
+
+void push(cpu8080 *cpu, uint8_t x, uint8_t y)
+{
+	cpu->sp -= 1;
+	cpu->memory[cpu->sp] = x;
+	cpu->sp -= 1;
+	cpu->memory[cpu->sp] = y;
+}
+
+void push16(cpu8080 *cpu, uint16_t x)
 {
 	uint8_t y;
 	y = (uint8_t)(x >> 8);
@@ -425,6 +478,32 @@ void pop(cpu8080 *cpu, uint8_t *x, uint8_t *y)
 	cpu->sp += 1;
 }
 
+void setSpecificFlagPsw(cpu8080 *cpu, int x, int cmp, bool *flag)
+{
+	if (x & cmp)
+	{
+		*flag = true;
+	}
+	else
+	{
+		*flag = false;
+	}
+}
+
+void popPsw(cpu8080 *cpu)
+{
+	uint8_t x;
+	x = cpu->memory[cpu->sp];
+	setSpecificFlagPsw(cpu, x, 0x1, &(cpu->carry));
+	setSpecificFlagPsw(cpu, x, 0x4, &(cpu->parity));
+	setSpecificFlagPsw(cpu, x, 0x10, &(cpu->aux));
+	setSpecificFlagPsw(cpu, x, 0x40, &(cpu->zero));
+	setSpecificFlagPsw(cpu, x, 0x80, &(cpu->sign));
+	cpu->sp += 1;
+	cpu->a = cpu->memory[cpu->sp];
+	cpu->sp += 1;	
+}
+
 void ret(cpu8080 *cpu)
 {
 	uint8_t x;
@@ -435,32 +514,33 @@ void ret(cpu8080 *cpu)
 	cpu->sp += 1;
 	y = (y << 8);
 	y = y | x;
-	cpu->pc = y;
+	cpu->pc = y - 1;
 }
 
 void jmp(cpu8080 *cpu, uint8_t x, uint8_t y)
 {
 	uint16_t z;
-	z = (uint16_t)x;
+	z = (uint16_t)y;
 	z = z << 8;
-	z = z | y;
-	cpu->pc = z;
+	z = z | x;
+	cpu->pc = (z - 1);
 }
 
 void call(cpu8080 *cpu, uint8_t x, uint8_t y)
 {
 	uint16_t z;
-	z = (uint16_t)x;
-	z = (x << 8);
-	z = z | y;
-	push(cpu, (cpu->pc + 3));
+	//z = (uint16_t)x;
+	z = (y << 8);
+	z = z | x;
+	z = z - 1;
+	push16(cpu, (cpu->pc + 3));
 	cpu->pc = z;
 }
 
 void rst(cpu8080 *cpu, uint16_t x)
 {
-	push(cpu, (cpu->pc+1));
-	cpu->pc = x;
+	push16(cpu, (cpu->pc+1));
+	cpu->pc = x - 1;
 }
 
 int uintConvert(uint8_t x, uint8_t y)
@@ -472,6 +552,17 @@ int uintConvert(uint8_t x, uint8_t y)
 	z = z | y;
 
 	return z;
+}
+
+void ldax(cpu8080 *cpu, uint8_t x, uint8_t y)
+{
+	printf("loading 0x%x from 0x%x\n", cpu->memory[uintConvert(x, y)], uintConvert(x, y));
+	cpu->a = (uint8_t)cpu->memory[uintConvert(x, y)];
+}
+
+void stax(cpu8080 *cpu, uint8_t x, uint8_t y)
+{
+	cpu->memory[uintConvert(x, y)] = cpu->a;	
 }
 
 int checkBreakPoint(breakpoints * breakpt, uint16_t x)
@@ -531,6 +622,32 @@ void resetExecution(cpu8080 *cpu)
 	cpu->breaked = false;
 }
 
+void printTwoArgs(cpu8080 *cpu, int pc)
+{
+	uint8_t x = cpu->memory[pc + 1];
+	uint8_t y = cpu->memory[pc + 2];	
+	if ((x > 0xf) && (y > 0xf))
+	{
+		printf("0x%x%x\n", x, y);
+		return;
+	}
+	else if ((x < 0xf) && (y < 0xf))
+	{
+		printf("0x0%x0%x\n", x, y);
+		return;		
+	}
+	else if (x < 0xf)
+	{
+		printf("0x0%x%x\n", x, y);
+		return;		
+	}
+	else
+	{
+		printf("0x%x0%x\n", x, y);
+		return;		
+	}
+}
+
 int disass(cpu8080 *cpu, int i)
 {
 	switch (cpu->memory[i])
@@ -540,7 +657,8 @@ int disass(cpu8080 *cpu, int i)
 			return i + 1;
 
 		case 0x01:
-			printf("0x%x: lxi b, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
+			printf("0x%x: lxi b, ", i);
+			printTwoArgs(cpu, i);
 			return i + 3;
 
 		case 0x02:
@@ -588,7 +706,7 @@ int disass(cpu8080 *cpu, int i)
 			return i + 1;
 
 		case 0x0d:
-			printf("0x%x: dcr b\n", i);
+			printf("0x%x: dcr c\n", i);
 			return i + 1;
 
 		case 0x0e:
@@ -604,7 +722,8 @@ int disass(cpu8080 *cpu, int i)
 			return i + 1;
 
 		case 0x11:
-			printf("0x%x: lxi d, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
+			printf("0x%x: lxi d, ", i);
+			printTwoArgs(cpu, i);
 			return i + 3;
 
 		case 0x12:
@@ -668,7 +787,8 @@ int disass(cpu8080 *cpu, int i)
 			return i + 1;
 
 		case 0x21:
-			printf("0x%x: lxi h, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
+			printf("0x%x: lxi h, ", i);
+			printTwoArgs(cpu, i);
 			return i + 3;
 
 		case 0x22:
@@ -732,7 +852,8 @@ int disass(cpu8080 *cpu, int i)
 			return i + 1;
 
 		case 0x31:
-			printf("0x%x: lxi sp, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
+			printf("0x%x: lxi sp, ", i);
+			printTwoArgs(cpu, i);
 			return i + 3;
 
 		case 0x32:
@@ -790,6 +911,7 @@ int disass(cpu8080 *cpu, int i)
 		case 0x3f:
 			printf("0x%x: cmc\n", i);
 			return i + 1;
+
 
 		case 0x40:
 			printf("0x%x: mov b, b\n", i);
@@ -1388,7 +1510,7 @@ int disass(cpu8080 *cpu, int i)
 			return i + 3;
 
 		case 0xd5:
-			printf("0x%x: push d", i);
+			printf("0x%x: push d\n", i);
 			return i + 1;
 
 		case 0xd6:
@@ -1444,14 +1566,14 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xe3:
 			printf("0x%x: xthl\n", i);
-			return i + 2;
+			return i + 1;
 
 		case 0xe4:
 			printf("0x%x: cpo 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
 			return i + 3;
 
 		case 0xe5:
-			printf("0x%x: push h", i);
+			printf("0x%x: push h\n", i);
 			return i + 1;
 
 		case 0xe6:
@@ -1508,14 +1630,14 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xf3:
 			printf("0x%x: di\n", i);
-			return i + 2;
+			return i + 1;
 
 		case 0xf4:
 			printf("0x%x: cp 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
 			return i + 3;
 
 		case 0xf5:
-			printf("0x%x: push psw", i);
+			printf("0x%x: push psw\n", i);
 			return i + 1;
 
 		case 0xf6:
@@ -1564,6 +1686,7 @@ int disass(cpu8080 *cpu, int i)
 void emulate(cpu8080 *cpu)
 {
 	int running;
+	int stepIns;
 	uint8_t op;
 
 	uint8_t x0;
@@ -1582,9 +1705,21 @@ void emulate(cpu8080 *cpu)
 			cpu->breaked = true;
 			return;
 		}
+
 		else
 		{
 			cpu->breaked = false;
+		}
+
+		if (cpu->step == 1)
+		{
+			cpu->step = 2;
+		}
+		else if (cpu->step == 2)
+		{
+			printf("Stepped to 0x%x\n", (int)cpu->pc);
+			cpu->step = 0;
+			return;
 		}
 
 		if (cpu->disasAsExec == true)
@@ -1598,15 +1733,17 @@ void emulate(cpu8080 *cpu)
 			case 0x00:
 				break;
 
-			// lxi b, x
+			// lxi b, xx
 			case 0x01:
 				cpu->b = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				cpu->c = cpu->memory[cpu->pc + 2];
+				cpu->pc += 2;
 				break;
 
 			// stax b
 			case 0x02:
-				cpu->memory[uintConvert(cpu->b, cpu->c)] = cpu->a;
+				stax(cpu, cpu->b, cpu->c);
+				//cpu->memory[uintConvert(cpu->b, cpu->c)] = cpu->a;
 				break;
 
 			// inx b
@@ -1615,44 +1752,53 @@ void emulate(cpu8080 *cpu)
 				{
 					cpu->c += 1;
 				}
-				else
+				else if (cpu->b != 0xff)
 				{
 					cpu->c = 0;
 					cpu->b += 1;
+				}
+				else
+				{
+					cpu->c = 0;
+					cpu->b = 0;
 				}
 				break;
 
 			// inr b
 			case 0x04:
-				x = (uint16_t)cpu->b + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->b = (uint8_t)x;
+				inr(cpu, &cpu->b);
+				//x = (uint16_t)cpu->b + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->b = (uint8_t)x;
 				break;
 
 			// dcr b
 			case 0x05:
-				x = (uint16_t)cpu->b - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->b = (uint8_t)x;
+				dcr(cpu, &(cpu->b));
+				//x = (uint16_t)cpu->b - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->b = (uint8_t)x;
 				break;
 
 			// mvi b, x
 			case 0x06:
-				cpu->b = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->b), cpu->memory[cpu->pc + 1]);
+				//cpu->b = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// rlc
 			case 0x07:
-				x = (uint16_t)cpu->a << 1;
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				x = ((cpu->a & 0x80) >> 7);
+				cpu->carry = (x);
+				cpu->a = (cpu->a << 1);
+				cpu->a = (cpu->a | x);
 				break;
 
 			// dad b
@@ -1672,7 +1818,8 @@ void emulate(cpu8080 *cpu)
 
 			// ldax b
 			case 0x0a:
-				cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->b, cpu->c)];
+				ldax(cpu, cpu->b, cpu->c);
+				//cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->b, cpu->c)];
 				break;
 
 			// dcx b
@@ -1681,56 +1828,67 @@ void emulate(cpu8080 *cpu)
 				{
 					cpu->c -= 1;
 				}
-				else
+				else if (cpu->b != 0x00)
 				{
 					cpu->c = 0xff;
 					cpu->b -= 1;
+				}
+				else
+				{
+					cpu->c = 0xff;
+					cpu->b = 0xff;
 				}
 				break;
 
 			// inr c
 			case 0x0c:
-				x = (uint16_t)cpu->c + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->c = (uint8_t)x;
+				inr(cpu, &(cpu->c));
+				//x = (uint16_t)cpu->c + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->c = (uint8_t)x;
 				break;
 
 			// dcr c
 			case 0x0d:
-				x = (uint16_t)cpu->c - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->c = (uint8_t)x;
+				dcr(cpu, &(cpu->c));
+				//x = (uint16_t)cpu->c - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->c = (uint8_t)x;
 				break;
 
 			// mvi c, x
 			case 0x0e:
-				cpu->c = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->c), cpu->memory[cpu->pc + 1]);
+				//cpu->c = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// rrc
 			case 0x0f:
-				x = (uint16_t)cpu->a >> 1;
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x; 
+				x = (cpu->a & 0x1);
+				cpu->carry = x;
+				cpu->a = (cpu->a >> 1);
+				cpu->a = (cpu->a | (x << 7));
 				break;
 
 
 			// lxi d, x
 			case 0x11:
 				cpu->d = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				cpu->e = cpu->memory[cpu->pc + 2];
+				cpu->pc += 2;
 				break;
 
 			// stax d
 			case 0x12:
-				cpu->memory[uintConvert(cpu->d, cpu->e)] = cpu->a;
+				stax(cpu, cpu->d, cpu->e);
+				//cpu->memory[uintConvert(cpu->d, cpu->e)] = cpu->a;
 				break;
 
 			// inx d
@@ -1739,45 +1897,55 @@ void emulate(cpu8080 *cpu)
 				{
 					cpu->e += 1;
 				}
-				else
+				else if (cpu->d != 0xff)
 				{
 					cpu->e = 0;
 					cpu->d += 1;
+				}
+				else
+				{
+					cpu->c = 0;
+					cpu->b = 0;
 				}
 				break;
 
 			// inr d
 			case 0x14:
-				x = (uint16_t)cpu->d + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->d = (uint8_t)x;
+				inr(cpu, &(cpu->d));
+				//x = (uint16_t)cpu->d + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->d = (uint8_t)x;
 				break;
 
 			// dcr d
 			case 0x15:
-				x = (uint16_t)cpu->d - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->d = (uint8_t)x;
+				dcr(cpu, &(cpu->d));
+				//x = (uint16_t)cpu->d - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->d = (uint8_t)x;
 				break;
 
 			// mvi d, x
 			case 0x16:
-				cpu->d = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->d), cpu->memory[cpu->pc + 1]);
+				//cpu->d = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// ral
 			case 0x17:
-				x0 = cpu->a << 1;
-				x = x | 0x80;
-				x = x & (uint8_t)cpu->carry;
-				cpu->carry = (bool)(x >> 8);
+				x = (cpu->a & 0x80) >> 7;
+				y = (int)cpu->carry;
+				cpu->carry = (x);
+				cpu->a = (cpu->a << 1);
+				cpu->a = cpu->a & 0xfe;
+				cpu->a = cpu->a | (y);
 				break;
 
 			// dad d
@@ -1797,69 +1965,95 @@ void emulate(cpu8080 *cpu)
 
 			// ldax d
 			case 0x1a:
-				cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->d, cpu->e)];
+				ldax(cpu, cpu->d, cpu->e);
+				//cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->d, cpu->e)];
 				break;
 
 			// dcx d
 			case 0x1b:
+				//if (cpu->e > 0x00)
+				//{
+				//	cpu->e -= 1;
+				//}
+				//else
+				//{
+				//	cpu->e = 0xff;
+				//	cpu->d -= 1;
+				//}
 				if (cpu->e > 0x00)
 				{
 					cpu->e -= 1;
 				}
-				else
+				else if (cpu->d != 0x00)
 				{
 					cpu->e = 0xff;
 					cpu->d -= 1;
+				}
+				else
+				{
+					cpu->e = 0xff;
+					cpu->d = 0xff;
 				}
 				break;
 
 			// inr e
 			case 0x1c:
-				x = (uint16_t)cpu->e + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->e = (uint8_t)x;
+				inr(cpu, &(cpu->e));
+				//x = (uint16_t)cpu->e + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->e = (uint8_t)x;
 				break;
 
 			// dcr e
 			case 0x1d:
-				x = (uint16_t)cpu->e - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->e = (uint8_t)x;
+				dcr(cpu, &(cpu->e));
+				//x = (uint16_t)cpu->e - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->e = (uint8_t)x;
 				break;
 
 			// mvi e, x
 			case 0x1e:
-				cpu->e = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->e), cpu->memory[cpu->pc + 1]);
+				//cpu->e = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// rar
 			case 0x1f:
-				x0 = cpu->a >> 1;
-				x = x | 0x80;
-				x = x & (uint8_t)cpu->carry;
-				cpu->carry = (bool)(x >> 8);
+				x = cpu->a & 0x01;
+				y = (int)cpu->carry;
+				cpu->carry = x;
+				cpu->a = (cpu->a >> 1);
+				cpu->a = cpu->a & 0x7f;
+				cpu->a = cpu->a | (y << 7);
 				break;
 
 
 			// lxi h x
 			case 0x21:
 				cpu->h = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				cpu->l = cpu->memory[cpu->pc + 2];
+				cpu->pc += 2;
 				break;
 
 			// shld xx
 			case 0x22:
-				x = (uint16_t)cpu->h;
-				x = x << 8;
-				x = x | (uint16_t)cpu->l;
-				cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
+				puts("dedwd");
+				//x = (uint16_t)cpu->h;
+				//x = x << 8;
+				//x = x | (uint16_t)cpu->l;
+				//cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
+				cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])] = cpu->l;
+				cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]) + 1] = cpu->h;
+				//printf("death 0x%x + 0x%x \n", uintConvert(cpu->pc + 1, cpu->pc + 2), uintConvert(cpu->pc + 1, cpu->pc + 2) + 1);
+				printf("ghol 0x%x\n", uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]));
 				cpu->pc += 2;
 				break;
 
@@ -1869,41 +2063,68 @@ void emulate(cpu8080 *cpu)
 				{
 					cpu->l += 1;
 				}
-				else
+				else if (cpu-> h != 0xff)
 				{
 					cpu->l = 0;
 					cpu->h += 1;
+				}
+				else
+				{
+					cpu->l = 0;
+					cpu->h = 0;
 				}
 				break;
 
 			// inr h
 			case 0x24:
-				x = (uint16_t)cpu->h + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->h = (uint8_t)x;
+				inr(cpu, &(cpu->h));
+				//x = (uint16_t)cpu->h + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->h = (uint8_t)x;
 				break;
 
 			// dcr h
 			case 0x25:
-				x = (uint16_t)cpu->h - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->h = (uint8_t)x;
+				dcr(cpu, &(cpu->h));
+				//x = (uint16_t)cpu->h - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->h = (uint8_t)x;
 				break;
 
 			// mvi h, x
 			case 0x26:
-				cpu->h = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->h), cpu->memory[cpu->pc + 1]);
+				//cpu->h = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// daa not implemented for now
 			case 0x27:
+				x = cpu->a;
+				if ((x & 0xf) > 9 || cpu->aux == true)
+				{
+					x = cpu->a += 6;
+					cpu->a += x;
+					auxiliaryFlag(cpu, (cpu->a & 0xf), 6, 1);
+				}
+				if ((x >> 4) > 9 || cpu->carry == true)
+				{
+					y = (x >> 4) + 6;
+					x = x & 0xf;
+					x = x | y;
+					cpu->a = x;
+					auxiliaryFlag(cpu, (cpu->a & 0xf0), 6, 1);
+				}
+				zeroFlag(cpu, x);
+				signFlag(cpu, x);
+				parityFlag(cpu, x);
+				carryFlag(cpu, x);
 				break;
 
 			// dad h
@@ -1924,48 +2145,66 @@ void emulate(cpu8080 *cpu)
 			// lhld xx
 			case 0x2a:
 				//cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->d, cpu->e)];
-				cpu->h = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)];
-				cpu->l = cpu->memory[(uintConvert(cpu->pc + 1, cpu->pc + 2)) + 8];
+				//printf("Loading 0x%x from 0x%x using 0x%x and 0x%x\n", cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])], uintConvert(cpu->memory[cpu->pc + 1, cpu->pc + 2), cpu->pc + 1, cpu->pc + 2);
+				cpu->l = cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])];
+				cpu->h = cpu->memory[(uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])) + 1];
 				cpu->pc += 2;
 				break;
 
 			// dcx h
 			case 0x2b:
+				//if (cpu->l > 0x00)
+				//{
+				//	cpu->l -= 1;
+				//}
+				//else
+				//{
+				//	cpu->l = 0xff;
+				//	cpu->h -= 1;
+				//}
 				if (cpu->l > 0x00)
 				{
 					cpu->l -= 1;
 				}
-				else
+				else if (cpu->h != 0x00)
 				{
 					cpu->l = 0xff;
 					cpu->h -= 1;
+				}
+				else
+				{
+					cpu->l = 0xff;
+					cpu->h = 0xff;
 				}
 				break;
 
 			// inr l
 			case 0x2c:
-				x = (uint16_t)cpu->l + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->l = (uint8_t)x;
+				inr(cpu, &(cpu->l));
+				//x = (uint16_t)cpu->l + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->l = (uint8_t)x;
 				break;
 
 			// dcr l
 			case 0x2d:
-				x = (uint16_t)cpu->l - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->l = (uint8_t)x;
+				dcr(cpu, &(cpu->l));
+				//x = (uint16_t)cpu->l - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->l = (uint8_t)x;
 				break;
 
 			// mvi l, x
 			case 0x2e:
-				cpu->l = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->l), cpu->memory[cpu->pc + 1]);
+				//cpu->l = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// cma
@@ -1975,45 +2214,59 @@ void emulate(cpu8080 *cpu)
 
 			// lxi sp x
 			case 0x31:
-				cpu->sp = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				x = cpu->memory[cpu->pc + 1];
+				x = x << 8;
+				x = x | cpu->memory[cpu->pc + 2]; 
+				cpu->sp = x;
+				//printf("Maybe vader %x\n", x);
+				cpu->pc += 2;
 				break;
 
 			// sta
 			case 0x32:
-				cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = cpu->a;
+				cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])] = cpu->a;
 				cpu->pc += 2;
 				break;
 
 			// inx sp
 			case 0x33:
-				cpu->sp += 1;
+				if (cpu->sp != 0xffff)
+				{
+					cpu->sp += 1;
+				}
+				else
+				{
+					cpu->sp = 0;
+				}
 				break;
 
 			// inr m
 			case 0x34:
-				x = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
+				inr(cpu, &(cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)]));
+				//x = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
 				break;
 
 			// dcr m
 			case 0x35:
-				x = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
+				dcr(cpu, &(cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)]));
+				//x = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)] = x;
 				break;
 
 			// mvi m, x
 			case 0x36:
-				cpu->memory[uintConvert(cpu->h, cpu->l)] = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->memory[uintConvert(cpu->h, cpu->l)]), cpu->memory[cpu->pc + 1]);
+				//cpu->memory[uintConvert(cpu->h, cpu->l)] = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
 			// stc
@@ -2023,7 +2276,6 @@ void emulate(cpu8080 *cpu)
 			// dad sp
 			case 0x39:
 				x = cpu->sp;
-
 				y = (uint16_t)cpu->h;
 				y = y << 8;
 				y = y | (uint16_t)cpu->l;
@@ -2036,43 +2288,53 @@ void emulate(cpu8080 *cpu)
 			// lda xx
 			case 0x3a:
 				//cpu->a = (uint8_t)cpu->memory[uintConvert(cpu->d, cpu->e)];
-				cpu->a = cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)];
+				cpu->a = cpu->memory[uintConvert(cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2])];
 				//cpu->l = cpu->memory[(uintConvert(cpu->pc + 1, cpu->pc + 2)) + 8];
 				cpu->pc += 2;
 				break;
 
 			// dcx sp
 			case 0x3b:
-				cpu->sp = cpu->sp - 1;
+				if (cpu->sp != 0xffff)
+				{
+					cpu->sp = cpu->sp - 1;
+				}
+				else
+				{
+					cpu->sp = 0x0;
+				}
 				break;
 
 			// inr a
 			case 0x3c:
-				x = (uint16_t)cpu->a + 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				inr(cpu, &(cpu->a));
+				//x = (uint16_t)cpu->a + 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->a = (uint8_t)x;
 				break;
 
 			// dcr a
 			case 0x3d:
-				x = (uint16_t)cpu->a - 1;
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				parityFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				dcr(cpu, &(cpu->a));
+				//x = (uint16_t)cpu->a - 1;
+				//zeroFlag(cpu, x);
+				//signFlag(cpu, x);
+				//parityFlag(cpu, x);
+				//carryFlag(cpu, x);
+				//cpu->a = (uint8_t)x;
 				break;
 
 			// mvi a, x
 			case 0x3e:
-				cpu->a = cpu->memory[cpu->pc + 1];
-				cpu->pc += 1;
+				mvi(cpu, &(cpu->a), cpu->memory[cpu->pc + 1]);
+				//cpu->a = cpu->memory[cpu->pc + 1];
+				//cpu->pc += 1;
 				break;
 
-			// cma
+			// cmc
 			case 0x3f:
 				cpu->carry = ~(cpu->carry);
 				break;
@@ -2822,6 +3084,10 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, (uint8_t)cpu->memory[cpu->pc + 1], (uint8_t)cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// jmp xx
@@ -2835,11 +3101,15 @@ void emulate(cpu8080 *cpu)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc  + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// push b
 			case 0xc5:
-				push(cpu, (uint16_t)(uintConvert(cpu->b, cpu->c)));
+				push(cpu, cpu->b, cpu->c);
 				break;
 
 			// adi n
@@ -2877,6 +3147,10 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// cz xx
@@ -2885,9 +3159,13 @@ void emulate(cpu8080 *cpu)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
-			// cal xx
+			// call xx
 			case 0xcd:
 				call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				break;
@@ -2927,11 +3205,15 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, (uint8_t)cpu->memory[cpu->pc + 1], (uint8_t)cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// out x
 			case 0xd3:
-				// instruction not implemented yet
+				cpu->pc += 1;
 				break;
 
 			// cnc xx
@@ -2940,11 +3222,15 @@ void emulate(cpu8080 *cpu)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc  + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// push d
 			case 0xd5:
-				push(cpu, (uint16_t)(uintConvert(cpu->d, cpu->e)));
+				push(cpu, cpu->d, cpu->e);
 				break;
 
 			// sui x
@@ -2977,6 +3263,10 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// in x
@@ -2989,6 +3279,10 @@ void emulate(cpu8080 *cpu)
 				if (cpu->carry == 1)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
+				}
+				else
+				{
+					cpu->pc += 2;
 				}
 				break;
 
@@ -3042,11 +3336,20 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, (uint8_t)cpu->memory[cpu->pc + 1], (uint8_t)cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// xthl
 			case 0xe3:
-				// instruction not implemented yet
+				x = cpu->l;
+				y = cpu->h;
+				cpu->l = cpu->memory[cpu->sp];
+				cpu->h = cpu->memory[cpu->sp + 1];
+				cpu->memory[cpu->sp] = x;
+				cpu->memory[cpu->sp + 1] = y;
 				break;
 
 			// cpo xx
@@ -3055,11 +3358,15 @@ void emulate(cpu8080 *cpu)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc  + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// push h
 			case 0xe5:
-				push(cpu, (uint16_t)(uintConvert(cpu->h, cpu->l)));
+				push(cpu, cpu->h, cpu->l);
 				break;
 
 			// ani x
@@ -3097,6 +3404,10 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// in x
@@ -3109,6 +3420,10 @@ void emulate(cpu8080 *cpu)
 				if (cpu->parity == 1)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
+				}
+				else
+				{
+					cpu->pc += 2;
 				}
 				break;
 
@@ -3138,7 +3453,7 @@ void emulate(cpu8080 *cpu)
 
 			// pop psw
 			case 0xf1:
-				// instruction not implemented yet NOP
+				popPsw(cpu);
 				break;
 
 			// jp xx
@@ -3147,11 +3462,15 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, (uint8_t)cpu->memory[cpu->pc + 1], (uint8_t)cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// di
 			case 0xf3:
-				// instruction not implemented yet
+				cpu->flipFlop = 0;
 				break;
 
 			// cp xx
@@ -3160,11 +3479,15 @@ void emulate(cpu8080 *cpu)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc  + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// push psw
 			case 0xf5:
-				// instruction not implemented yet
+				push(cpu, cpu->a, convertFlagsRegister(cpu));
 				break;
 
 			// ori x
@@ -3202,6 +3525,10 @@ void emulate(cpu8080 *cpu)
 				{
 					jmp(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
 				}
+				else
+				{
+					cpu->pc += 2;
+				}
 				break;
 
 			// ei
@@ -3214,6 +3541,10 @@ void emulate(cpu8080 *cpu)
 				if (cpu->sign == 1)
 				{
 					call(cpu, cpu->memory[cpu->pc + 1], cpu->memory[cpu->pc + 2]);
+				}
+				else
+				{
+					cpu->pc += 2;
 				}
 				break;
 
@@ -3228,9 +3559,9 @@ void emulate(cpu8080 *cpu)
 				break;
 
 
-			// rst 5
+			// rst 7
 			case 0xff:
-				rst(cpu, 0x28);
+				rst(cpu, 0x38);
 				break;
 		}
 	}
@@ -3246,16 +3577,7 @@ void emulate(cpu8080 *cpu)
 1:	1 (It always holds the value 1)
 0:	Carry (C Flag)
 */
-uint8_t convertFlagsRegister(cpu8080 *cpu)
-{
-	uint8_t x = 0x2;
-	x = x | ((uint8_t)(cpu->sign == true) << 7);
-	x = x | ((uint8_t)(cpu->zero == true) << 6);
-	x = x | ((uint8_t)(cpu->aux == true) << 4);
-	x = x | ((uint8_t)(cpu->parity == true) << 2);
-	x = x | ((uint8_t)(cpu->carry == true) << 1);
-	return x;
-}
+
 
 void printFlags(cpu8080 *cpu)
 {
@@ -3292,6 +3614,8 @@ void printRegisters(cpu8080 *cpu)
 	puts("\nStack registers (16 bit)");
 	printf("register pc: 0x%x\n", (int)cpu->pc);
 	printf("register sp: 0x%x\n", (int)cpu->sp);
+
+	printf("\nInterrupt bit: 0x%x\n", cpu->flipFlop);
 	return;
 }
 
@@ -3345,7 +3669,7 @@ int charToInt(char * inp)
 	arg = removeBeginning(inp);
 	if (strncmp(arg, "0x", 2) == 0)
 	{
-		puts("base 16");
+		//puts("base 16");
 		x = strtoumax(arg, NULL, 16);
 
 	}
@@ -3353,6 +3677,23 @@ int charToInt(char * inp)
 	{
 		x = strtoumax(arg, NULL, 10);
 	}	
+	return x;
+}
+
+int hexDecimaltoInt(char *arg)
+{
+	int x;
+	if (strncmp(arg, "0x", 2) == 0)
+	{
+		//puts("base 16");
+		x = strtoumax(arg, NULL, 16);
+
+	}
+	else
+	{
+		x = strtoumax(arg, NULL, 10);
+	}	
+	return x;
 }
 
 void createBreakpoint(cpu8080 *cpu, char *menuInput)
@@ -3472,7 +3813,7 @@ void printRegister(cpu8080 *cpu, char *menuInput)
 
 	else if (strncmp(arg, "de", 2) == 0)
 	{
-		printf("register de: 0x%x\n", (int)uintConvert(cpu->b, cpu->c));
+		printf("register de: 0x%x\n", (int)uintConvert(cpu->d, cpu->e));
 		return;
 	}	
 
@@ -3627,7 +3968,7 @@ void disassembleAll(cpu8080 *cpu)
 {
 	int i;
 	i = 0;
-	while (i < cpu->codeEnd)
+	while (i < (cpu->codeEnd + 1))
 	{
 		i = disass(cpu, i);
 	}
@@ -3645,6 +3986,76 @@ void toggleDisassExec(cpu8080 *cpu)
 	}
 }
 
+void jumpExec(cpu8080 *cpu, char *input)
+{
+	int instr;
+	instr = charToInt(input);
+	cpu->pc = instr - 1;
+}
+
+void stepInstruction(cpu8080 *cpu)
+{
+	cpu->step = 1;
+}
+
+void examineMemory(cpu8080 *cpu, char *inp)
+{
+	char *arg0, *arg1;
+	int x, y, i;
+
+	arg0 = strtok(inp, " ");
+	if (arg0 == NULL)
+	{
+		puts("No args");
+		return;
+	}
+
+	arg0 = strtok(NULL, " ");
+	if (arg0 == NULL)
+	{
+		puts("one args");
+		return;
+	}
+
+	arg1 = strtok(NULL, " ");
+	if (arg1 == NULL)
+	{
+		x = hexDecimaltoInt(arg0);
+		printf("0x%x: 0x%x\n", x, cpu->memory[x]);
+		return;
+	}
+	else
+	{
+		x = hexDecimaltoInt(arg0);
+		y = hexDecimaltoInt(arg1);
+		for (i = 0; i < x; i++)
+		{
+			printf("0x%x: 0x%x\n", y + i, cpu->memory[y + i]);
+		}
+		return;		
+	}
+}
+
+void printHelp(void)
+{
+	puts("Help Menu");
+	puts("a <breakpoint id>	-	Activate a previously deacticated breakpoint");
+	puts("b <code address>	-	Set a breakpoint at the address");
+	puts("c			-	Continue execution from a breakpoint");
+	puts("d <breakpoint id>	-	Deactivate a breakpoint");
+	puts("e			-	Disassemble all code in binary");
+	puts("h			-	Print help menu");
+	puts("i			-	Display values of all registers and flags");
+	puts("j <next adr>		-	Set the next address to be executed (essentially a jump, but need to continue)");
+	puts("m			-	Print the addresses for memory regions");
+	puts("p <register>		-	Prints contents of register");
+	puts("q			-	Quit the emulator/debugger");
+	puts("r			-	Run the emulator from the start");
+	puts("s			-	Step to the next instruction");
+	puts("t			-	Toggle running disassembly, which disassembles instructions as they are ran");
+	puts("u			-	Dump the contents of memory to the file memory.dat");
+	puts("x <amnt> <adr>		-	Print amnt 8 bit segments starting at adr (if single argument given, amnt is 1)");
+}
 /*
 void disassFunction(cpu8080 *cpu, char *menuInput)
 {
@@ -3674,18 +4085,11 @@ void menu(cpu8080 *cpu)
 		fgets(menuChoice, menuInputSize - 1, stdin);
 		switch (menuChoice[0])
 		{
-			case 'r':
-				resetExecution(cpu);
-				emulate(cpu);
-				break;
-			case 'i':
-				printRegisters(cpu);
+			case 'a':
+				activateBreakpoint(cpu, menuChoice);
 				break;
 			case 'b':
 				createBreakpoint(cpu, menuChoice);
-				break;
-			case 's':
-				showBreakpoints(cpu->breakpoints, 0);
 				break;
 			case 'c':
 				emulate(cpu);
@@ -3693,33 +4097,49 @@ void menu(cpu8080 *cpu)
 			case 'd':
 				deactivateBreakpoint(cpu, menuChoice);
 				break;
-			case 'a':
-				activateBreakpoint(cpu, menuChoice);
+			case 'e':
+				disassembleAll(cpu);
+				break;
+			case 'h':
+				printHelp();
+				break;
+			case 'i':
+				printRegisters(cpu);
+				break;
+			case 'j':
+				jumpExec(cpu, menuChoice);
 				break;
 			case 'm':
 				printMemoryRegions(cpu);
+				break;
+			case 'p':
+				printRegister(cpu, menuChoice);
 				break;
 			case 'q':
 				resetExecution(cpu);
 				destroyCpu(cpu);
 				return;
 				break;
-			case 'p':
-				printRegister(cpu, menuChoice);
+			case 'r':
+				resetExecution(cpu);
+				emulate(cpu);
+				break;
+			case 's':
+				stepInstruction(cpu);
+				emulate(cpu);
+			case 't':
+				toggleDisassExec(cpu);
 				break;
 			case 'u':
 				dumpMemory(cpu);
 				break;
-			case 'e':
-				disassembleAll(cpu);
+			case 'x':
+				examineMemory(cpu, menuChoice);
 				break;
-			case 't':
-				toggleDisassExec(cpu);
+			case 'z':
+				showBreakpoints(cpu->breakpoints, 0);
 				break;
 
-//			case 'f':
-//				find(cpu, menuChoice);
-//				break;
 		}
 	}
 }
