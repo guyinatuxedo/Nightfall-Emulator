@@ -47,7 +47,7 @@ typedef struct cpu8080 {
 	uint16_t pc;
 
 	// a bit which controls whether interrupts can happen, currently don't use it for anything. 1 for allow, 0 for disable.
-	bool flipFlop;
+	bool allowInterrupt;
 
 	// a ptr to the memory region
 	uint8_t *memory;
@@ -106,7 +106,7 @@ cpu8080 *createCpu(void)
 	cpu->sp = (uint16_t)startStack;
 	cpu->pc = 0x0;
 
-	cpu->flipFlop = 1;
+	cpu->allowInterrupt = 1;
 
 	cpu->breakpoints = NULL;
 
@@ -231,7 +231,7 @@ void parityFlag(cpu8080 *cpu, uint16_t x)
 
 void zeroFlag(cpu8080 *cpu, uint16_t x)
 {
-	if (x == 0)
+	if ((x & 0xff) == 0)
 	{
 		cpu->zero = true;
 	}
@@ -1598,7 +1598,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xeb:
 			printf("0x%x: xchg\n", i);
-			return i + 2;
+			return i + 1;
 
 		case 0xec:
 			printf("0x%x: cpe, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
@@ -2078,30 +2078,16 @@ void emulate(cpu8080 *cpu)
 			// inr h
 			case 0x24:
 				inr(cpu, &(cpu->h));
-				//x = (uint16_t)cpu->h + 1;
-				//zeroFlag(cpu, x);
-				//signFlag(cpu, x);
-				//parityFlag(cpu, x);
-				//carryFlag(cpu, x);
-				//cpu->h = (uint8_t)x;
 				break;
 
 			// dcr h
 			case 0x25:
 				dcr(cpu, &(cpu->h));
-				//x = (uint16_t)cpu->h - 1;
-				//zeroFlag(cpu, x);
-				//signFlag(cpu, x);
-				//parityFlag(cpu, x);
-				//carryFlag(cpu, x);
-				//cpu->h = (uint8_t)x;
 				break;
 
 			// mvi h, x
 			case 0x26:
 				mvi(cpu, &(cpu->h), cpu->memory[cpu->pc + 1]);
-				//cpu->h = cpu->memory[cpu->pc + 1];
-				//cpu->pc += 1;
 				break;
 
 			// daa not implemented for now
@@ -2759,8 +2745,6 @@ void emulate(cpu8080 *cpu)
 			// adc m
 			case 0x8e:
 				adc(cpu, cpu->memory[(int)uintConvert(cpu->h, cpu->l)]);
-				printf("0x%x\n", (int)uintConvert(cpu->h, cpu->l));
-				printf("end 0x%x\n", (uint8_t)cpu->memory[(int)uintConvert(cpu->h, cpu->l)]);
 				break;
 				
 			// adc a
@@ -3114,12 +3098,7 @@ void emulate(cpu8080 *cpu)
 
 			// adi n
 			case 0xc6:
-				x = (uint16_t)cpu->a + cpu->memory[cpu->sp + 1];
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				add(cpu, cpu->memory[cpu->pc + 1]);
 				cpu->pc += 1;
 				break;
 
@@ -3172,11 +3151,8 @@ void emulate(cpu8080 *cpu)
 
 			// aci x
 			case 0xce:
-				x = (uint16_t)cpu->a + cpu->memory[cpu->pc + 1] + (uint8_t)cpu->carry;
-				carryFlag(cpu, x);
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
+				adc(cpu, cpu->memory[cpu->pc + 1]);
+				cpu->pc += 1;
 				break;
 
 
@@ -3211,7 +3187,7 @@ void emulate(cpu8080 *cpu)
 				}
 				break;
 
-			// out x
+			// out x, I haven't implemented other hardware devices so this is essentially a NOP with an arg
 			case 0xd3:
 				cpu->pc += 1;
 				break;
@@ -3235,12 +3211,7 @@ void emulate(cpu8080 *cpu)
 
 			// sui x
 			case 0xd6:
-				x = (uint16_t)cpu->a - cpu->memory[cpu->sp + 1];
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				sub(cpu, cpu->memory[cpu->pc + 1]);
 				cpu->pc += 1;
 				break;
 
@@ -3269,9 +3240,9 @@ void emulate(cpu8080 *cpu)
 				}
 				break;
 
-			// in x
+			// in x, I haven't implemented other hardware devices so this is essentially a NOP with an arg
 			case 0xdb:
-				// instruction not implemented, so essentially just a NOP
+				cpu->pc += 1;
 				break;
 
 			// cc xx
@@ -3289,11 +3260,8 @@ void emulate(cpu8080 *cpu)
 
 			// sbi x
 			case 0xde:
-				x = (uint16_t)cpu->a - (cpu->memory[cpu->pc + 1] + (uint8_t)cpu->carry);
-				carryFlag(cpu, x);
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
+				sbb(cpu, cpu->memory[cpu->pc + 1]);
+				cpu->pc += 1;
 				break;
 
 			// exit				
@@ -3371,12 +3339,7 @@ void emulate(cpu8080 *cpu)
 
 			// ani x
 			case 0xe6:
-				x = (uint16_t)cpu->a & cpu->memory[cpu->sp + 1];
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				and(cpu, cpu->memory[cpu->pc + 1]);
 				cpu->pc += 1;
 				break;
 
@@ -3395,7 +3358,10 @@ void emulate(cpu8080 *cpu)
 
 			// pchl
 			case 0xe9:
-				// instruction not implemented yet
+				x = cpu->h;
+				x = (x << 8);
+				x = (x | cpu->l);
+				cpu->pc = (x - 1);
 				break;
 
 			// jpe xx
@@ -3410,9 +3376,14 @@ void emulate(cpu8080 *cpu)
 				}
 				break;
 
-			// in x
+			// xchg
 			case 0xeb:
-				// instruction not implemented, so essentially just a NOP
+				x = cpu->d;
+				y = cpu->e;
+				cpu->d = cpu->h;
+				cpu->e = cpu->l;
+				cpu->h = x;
+				cpu->l = y;
 				break;
 
 			// cpe xx
@@ -3430,11 +3401,8 @@ void emulate(cpu8080 *cpu)
 
 			// xri x
 			case 0xee:
-				x = (uint16_t)cpu->a ^ cpu->memory[cpu->pc + 1];
-				carryFlag(cpu, x);
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
+				xor(cpu, cpu->memory[cpu->pc + 1]);
+				cpu->pc += 1;
 				break;
 
 
@@ -3470,7 +3438,7 @@ void emulate(cpu8080 *cpu)
 
 			// di
 			case 0xf3:
-				cpu->flipFlop = 0;
+				cpu->allowInterrupt = 0;
 				break;
 
 			// cp xx
@@ -3492,12 +3460,7 @@ void emulate(cpu8080 *cpu)
 
 			// ori x
 			case 0xf6:
-				x = (uint16_t)cpu->a | cpu->memory[cpu->sp + 1];
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
-				carryFlag(cpu, x);
-				cpu->a = (uint8_t)x;
+				or(cpu, cpu->memory[cpu->pc + 1]);
 				cpu->pc += 1;
 				break;
 
@@ -3516,7 +3479,10 @@ void emulate(cpu8080 *cpu)
 
 			// sphl
 			case 0xf9:
-				// instruction not implemented yet
+				x = cpu->h;
+				x = (x << 8);
+				x = (x | cpu->l);
+				cpu->sp = x;
 				break;
 
 			// jm xx
@@ -3533,7 +3499,7 @@ void emulate(cpu8080 *cpu)
 
 			// ei
 			case 0xfb:
-				// instruction not implemented, so essentially just a NOP
+				cpu->allowInterrupt = 1;
 				break;
 
 			// cm xx
@@ -3551,11 +3517,8 @@ void emulate(cpu8080 *cpu)
 
 			// cpi x
 			case 0xfe:
-				x = (uint16_t)cpu->a - cpu->memory[cpu->pc + 1];
-				carryFlag(cpu, x);
-				parityFlag(cpu, x);
-				zeroFlag(cpu, x);
-				signFlag(cpu, x);
+				cmp(cpu, cpu->memory[cpu->pc + 1]);
+				cpu->pc += 1;
 				break;
 
 
@@ -3615,7 +3578,7 @@ void printRegisters(cpu8080 *cpu)
 	printf("register pc: 0x%x\n", (int)cpu->pc);
 	printf("register sp: 0x%x\n", (int)cpu->sp);
 
-	printf("\nInterrupt bit: 0x%x\n", cpu->flipFlop);
+	printf("\nInterrupt bit: 0x%x\n", cpu->allowInterrupt);
 	return;
 }
 
