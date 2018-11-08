@@ -1,5 +1,3 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
 #include "Nightfall.h"
@@ -105,7 +103,7 @@ void carryFlagSub(cpu8080 *cpu, uint16_t x)
 
 void carryFlag16(cpu8080 *cpu, uint32_t x)
 {
-	if ((x & 0x10000) == 0)
+	if ((x & 0x10000) != 0)
 	{
 		cpu->carry = true;
 	}

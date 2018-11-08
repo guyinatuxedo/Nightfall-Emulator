@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 #include <inttypes.h>
@@ -174,74 +173,66 @@ void printRegister(cpu8080 *cpu, char *menuInput)
 	if (strncmp(arg, "bc", 2) == 0)
 	{
 		printf("register bc: 0x%x\n", (int)uintConvert(cpu->b, cpu->c));
-		return;
 	}
 
 	else if (strncmp(arg, "de", 2) == 0)
 	{
 		printf("register de: 0x%x\n", (int)uintConvert(cpu->d, cpu->e));
-		return;
 	}	
 
 	else if (strncmp(arg, "hl", 2) == 0)
 	{
 		printf("register hl: 0x%x\n", (int)uintConvert(cpu->h, cpu->l));
-		return;
 	}
 
 	else if (strncmp(arg, "af", 2) == 0)
 	{
 		printf("register af: 0x%x\n", (int)uintConvert(cpu->h, convertFlagsRegister(cpu)));
-		return;
 	}
 
 	else if (strncmp(arg, "pc", 2) == 0)
 	{
 		printf("register pc: 0x%x\n", (int)cpu->pc);
-		return;
 	}
 
 	else if (strncmp(arg, "sp", 2) == 0)
 	{
 		printf("register sp: 0x%x\n", (int)cpu->sp);
-		return;
 	}
 
-	switch(arg[0])
+	else
 	{
-		case 'a':
-			printf("register a: 0x%x\n", (uint16_t)cpu->a);
-			return;
-			break;
-		case 'b':
-			printf("register b: 0x%x\n", (uint16_t)cpu->b);
-			return;
-			break;
-		case 'c':
-			printf("register c: 0x%x\n", (uint16_t)cpu->c);
-			return;
-			break;
-		case 'd':
-			printf("register d: 0x%x\n", (uint16_t)cpu->d);
-			return;
-			break;
-		case 'e':
-			printf("register e: 0x%x\n", (uint16_t)cpu->e);
-			return;
-			break;
-		case 'h':
-			printf("register h: 0x%x\n", (uint16_t)cpu->h);
-			return;
-			break;
-		case 'l':
-			printf("register l: 0x%x\n", (uint16_t)cpu->l);
-			return;
-			break;
-		case 'f':
-			printFlags(cpu);
-			return;
-			break;
+		switch(arg[0])
+		{
+			case 'a':
+				printf("register a: 0x%x\n", (uint16_t)cpu->a);
+				break;
+			case 'b':
+				printf("register b: 0x%x\n", (uint16_t)cpu->b);
+				break;
+			case 'c':
+				printf("register c: 0x%x\n", (uint16_t)cpu->c);
+				break;
+			case 'd':
+				printf("register d: 0x%x\n", (uint16_t)cpu->d);
+				break;
+			case 'e':
+				printf("register e: 0x%x\n", (uint16_t)cpu->e);
+				break;
+			case 'h':
+				printf("register h: 0x%x\n", (uint16_t)cpu->h);
+				break;
+			case 'l':
+				printf("register l: 0x%x\n", (uint16_t)cpu->l);
+				break;
+			case 'f':
+				printFlags(cpu);
+				break;
+		}
 	}
+
+	free(arg);
+	return;
 }
 
 void resetExecution(cpu8080 *cpu)
@@ -270,6 +261,8 @@ void resetExecution(cpu8080 *cpu)
 
 	cpu->running = false;
 	cpu->breaked = false;
+
+	cpu->step = 0;
 }
 
 cpu8080 *createCpu(void)
@@ -322,10 +315,26 @@ cpu8080 *createCpu(void)
 	return cpu;
 }
 
+void freeBreakpoints(breakpoints *breakpoint)
+{
+	breakpoints *next;
+	if (breakpoint == NULL)
+	{
+		return;
+	}
+	else
+	{
+		next = breakpoint->next;
+		free(breakpoint);
+		freeBreakpoints(next);
+	}
+}
+
 void destroyCpu(cpu8080 *cpu)
 {
 	free(cpu->memory);
 	cpu->memory = 0;
+	freeBreakpoints(cpu->breakpoints);
 	free(cpu);
 	cpu = 0;
 	return;
@@ -407,7 +416,7 @@ void showBreakpoints(breakpoints *breakpoint, int n)
 	}
 	else
 	{
-		printf("Breakpoint %x at %x\t\t(active: %d)\n", n, breakpoint->breakp, (int)breakpoint->active);
+		printf("Breakpoint 0x%x at %x\t\t(active: %d)\n", n, breakpoint->breakp, (int)breakpoint->active);
 		return showBreakpoints(breakpoint->next, n + 1);
 	}
 }

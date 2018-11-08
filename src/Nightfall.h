@@ -116,6 +116,14 @@ void inr(cpu8080 *cpu, uint8_t *reg);
 
 void dcr(cpu8080 *cpu, uint8_t *reg);
 
+void inx8(uint8_t *x, uint8_t *y);
+
+void inx16(uint16_t *x);
+
+void dcx8(uint8_t *x, uint8_t *y);
+
+void dcx16(uint16_t *x);
+
 // These are functions which essentially deal with moving values around
 
 void stax(cpu8080 *cpu, uint8_t x, uint8_t y);
@@ -123,6 +131,14 @@ void stax(cpu8080 *cpu, uint8_t x, uint8_t y);
 void ldax(cpu8080 *cpu, uint8_t x, uint8_t y);
 
 void mvi(cpu8080 *cpu, uint8_t *reg, uint8_t arg);
+
+void lxi(cpu8080 *cpu, uint8_t *x, uint8_t *y);
+
+void lxi16(cpu8080 *cpu, uint16_t *x);
+
+void dad(cpu8080 *cpu, uint8_t *x, uint8_t *y);
+
+void dad16(cpu8080 *cpu, uint16_t *z);
 
 // Here are the functions which deal with poping / pushing
 

@@ -1,5 +1,3 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
 #include "Nightfall.h"
@@ -70,33 +68,17 @@ void emulate(cpu8080 *cpu)
 
 			// lxi b, xx
 			case 0x01:
-				cpu->b = cpu->memory[cpu->pc + 1];
-				cpu->c = cpu->memory[cpu->pc + 2];
-				cpu->pc += 2;
+				lxi(cpu, (&cpu->b), (&cpu->c));
 				break;
 
 			// stax b
 			case 0x02:
 				stax(cpu, cpu->b, cpu->c);
-				//cpu->memory[uintConvert(cpu->b, cpu->c)] = cpu->a;
 				break;
 
 			// inx b
 			case 0x03:
-				if (cpu->c < 0xff)
-				{
-					cpu->c += 1;
-				}
-				else if (cpu->b != 0xff)
-				{
-					cpu->c = 0;
-					cpu->b += 1;
-				}
-				else
-				{
-					cpu->c = 0;
-					cpu->b = 0;
-				}
+				inx8((&cpu->b), (&cpu->c));
 				break;
 
 			// inr b
@@ -124,17 +106,7 @@ void emulate(cpu8080 *cpu)
 
 			// dad b
 			case 0x09:
-				x = (uint16_t)cpu->b;
-				x = x << 8;
-				x = x | (uint16_t)cpu->c;
-
-				y = (uint16_t)cpu->h;
-				y = y << 8;
-				y = y | (uint16_t)cpu->l;
-				z = x + y;
-				carryFlag16(cpu, z);
-				cpu->l = (uint8_t)(z);
-				cpu->h = (uint8_t)(z >> 8);
+				dad(cpu, (&cpu->b), (&cpu->c));
 				break;
 
 			// ldax b
@@ -144,20 +116,7 @@ void emulate(cpu8080 *cpu)
 
 			// dcx b
 			case 0x0b:
-				if (cpu->c > 0x00)
-				{
-					cpu->c -= 1;
-				}
-				else if (cpu->b != 0x00)
-				{
-					cpu->c = 0xff;
-					cpu->b -= 1;
-				}
-				else
-				{
-					cpu->c = 0xff;
-					cpu->b = 0xff;
-				}
+				dcx8((&cpu->b), (&cpu->c));
 				break;
 
 			// inr c
@@ -187,33 +146,17 @@ void emulate(cpu8080 *cpu)
 
 			// lxi d, xx
 			case 0x11:
-				cpu->d = cpu->memory[cpu->pc + 1];
-				cpu->e = cpu->memory[cpu->pc + 2];
-				cpu->pc += 2;
+				lxi(cpu, (&cpu->d), (&cpu->e));
 				break;
 
 			// stax d
 			case 0x12:
 				stax(cpu, cpu->d, cpu->e);
-				//cpu->memory[uintConvert(cpu->d, cpu->e)] = cpu->a;
 				break;
 
 			// inx d
 			case 0x13:
-				if (cpu->e < 0xff)
-				{
-					cpu->e += 1;
-				}
-				else if (cpu->d != 0xff)
-				{
-					cpu->e = 0;
-					cpu->d += 1;
-				}
-				else
-				{
-					cpu->c = 0;
-					cpu->b = 0;
-				}
+				inx8((&cpu->d), (&cpu->e));
 				break;
 
 			// inr d
@@ -243,17 +186,7 @@ void emulate(cpu8080 *cpu)
 
 			// dad d
 			case 0x19:
-				x = (uint16_t)cpu->d;
-				x = x << 8;
-				x = x | (uint16_t)cpu->e;
-
-				y = (uint16_t)cpu->h;
-				y = y << 8;
-				y = y | (uint16_t)cpu->l;
-				z = x + y;
-				carryFlag16(cpu, z);
-				cpu->l = (uint8_t)(z);
-				cpu->h = (uint8_t)(z >> 8);
+				dad(cpu, (&cpu->d), (&cpu->e));
 				break;
 
 			// ldax d
@@ -263,20 +196,7 @@ void emulate(cpu8080 *cpu)
 
 			// dcx d
 			case 0x1b:
-				if (cpu->e > 0x00)
-				{
-					cpu->e -= 1;
-				}
-				else if (cpu->d != 0x00)
-				{
-					cpu->e = 0xff;
-					cpu->d -= 1;
-				}
-				else
-				{
-					cpu->e = 0xff;
-					cpu->d = 0xff;
-				}
+				dcx8((&cpu->d), (&cpu->e));
 				break;
 
 			// inr e
@@ -307,9 +227,7 @@ void emulate(cpu8080 *cpu)
 
 			// lxi h, xx
 			case 0x21:
-				cpu->h = cpu->memory[cpu->pc + 1];
-				cpu->l = cpu->memory[cpu->pc + 2];
-				cpu->pc += 2;
+				lxi(cpu, (&cpu->h), (&cpu->l));
 				break;
 
 			// shld xx
@@ -321,20 +239,7 @@ void emulate(cpu8080 *cpu)
 
 			// inx h
 			case 0x23:
-				if (cpu->l < 0xff)
-				{
-					cpu->l += 1;
-				}
-				else if (cpu-> h != 0xff)
-				{
-					cpu->l = 0;
-					cpu->h += 1;
-				}
-				else
-				{
-					cpu->l = 0;
-					cpu->h = 0;
-				}
+				inx8((&cpu->h), (&cpu->l));
 				break;
 
 			// inr h
@@ -377,17 +282,7 @@ void emulate(cpu8080 *cpu)
 
 			// dad h
 			case 0x29:
-				x = (uint16_t)cpu->h;
-				x = x << 8;
-				x = x | (uint16_t)cpu->l;
-
-				y = (uint16_t)cpu->h;
-				y = y << 8;
-				y = y | (uint16_t)cpu->l;
-				z = x + y;
-				carryFlag16(cpu, z);
-				cpu->l = (uint8_t)(z);
-				cpu->h = (uint8_t)(z >> 8);
+				dad(cpu, (&cpu->h), (&cpu->l));
 				break;
 
 			// lhld xx
@@ -399,20 +294,7 @@ void emulate(cpu8080 *cpu)
 
 			// dcx h
 			case 0x2b:
-				if (cpu->l > 0x00)
-				{
-					cpu->l -= 1;
-				}
-				else if (cpu->h != 0x00)
-				{
-					cpu->l = 0xff;
-					cpu->h -= 1;
-				}
-				else
-				{
-					cpu->l = 0xff;
-					cpu->h = 0xff;
-				}
+				dcx8((&cpu->h), (&cpu->l));
 				break;
 
 			// inr l
@@ -437,11 +319,7 @@ void emulate(cpu8080 *cpu)
 
 			// lxi sp xx
 			case 0x31:
-				x = cpu->memory[cpu->pc + 1];
-				x = x << 8;
-				x = x | cpu->memory[cpu->pc + 2]; 
-				cpu->sp = x;
-				cpu->pc += 2;
+				lxi16(cpu, (&cpu->sp));
 				break;
 
 			// sta xx
@@ -452,24 +330,17 @@ void emulate(cpu8080 *cpu)
 
 			// inx sp
 			case 0x33:
-				if (cpu->sp != 0xffff)
-				{
-					cpu->sp += 1;
-				}
-				else
-				{
-					cpu->sp = 0;
-				}
+				inx16(&cpu->sp);
 				break;
 
 			// inr m
 			case 0x34:
-				inr(cpu, &(cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)]));
+				inr(cpu, &(cpu->memory[uintConvert(cpu->h, cpu->l)]));
 				break;
 
 			// dcr m
 			case 0x35:
-				dcr(cpu, &(cpu->memory[uintConvert(cpu->pc + 1, cpu->pc + 2)]));
+				dcr(cpu, &(cpu->memory[uintConvert(cpu->h, cpu->l)]));
 				break;
 
 			// mvi m, x
@@ -483,14 +354,7 @@ void emulate(cpu8080 *cpu)
 
 			// dad sp
 			case 0x39:
-				x = cpu->sp;
-				y = (uint16_t)cpu->h;
-				y = y << 8;
-				y = y | (uint16_t)cpu->l;
-				z = x + y;
-				carryFlag16(cpu, z);
-				cpu->l = (uint8_t)(z);
-				cpu->h = (uint8_t)(z >> 8);
+				dad16(cpu, (&cpu->sp));
 				break;
 
 			// lda xx
@@ -501,14 +365,7 @@ void emulate(cpu8080 *cpu)
 
 			// dcx sp
 			case 0x3b:
-				if (cpu->sp != 0xffff)
-				{
-					cpu->sp = cpu->sp - 1;
-				}
-				else
-				{
-					cpu->sp = 0x0;
-				}
+				dcx16(&cpu->sp);
 				break;
 
 			// inr a
@@ -1393,7 +1250,6 @@ void emulate(cpu8080 *cpu)
 					case 0x66:	
 						running = 0;
 						resetExecution(cpu);
-						//printf("enjoyr your slay 0x%x\n", cpu->sp);
 						break;
 				}
 				break;

@@ -1,10 +1,9 @@
 #include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
 #include <inttypes.h>
 #include "Nightfall.h"
+
+// This is the main code file, it holds the menu function for the debugger, and the main function
 
 void menu(cpu8080 *cpu)
 {
@@ -51,6 +50,7 @@ void menu(cpu8080 *cpu)
 			case 'q':
 				resetExecution(cpu);
 				destroyCpu(cpu);
+				free(menuChoice);
 				return;
 				break;
 			case 'r':
@@ -60,6 +60,7 @@ void menu(cpu8080 *cpu)
 			case 's':
 				stepInstruction(cpu);
 				emulate(cpu);
+				break;
 			case 't':
 				toggleDisassExec(cpu);
 				break;
@@ -83,7 +84,7 @@ int main(int argc, char **argv)
 
 	if (argc != 2)
 	{
-		puts("gimme input file");
+		puts("Takes single argument, filename of binary to emulate / debug\nex:	./Nightfall block0/testcase00e");
 		exit(0);
 	}
 

@@ -1,6 +1,4 @@
 #include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <inttypes.h>
@@ -45,6 +43,7 @@ int charToInt(char * inp)
 	{
 		x = strtoumax(arg, NULL, 10);
 	}	
+	free(arg);
 	return x;
 }
 
@@ -149,6 +148,7 @@ void scanBinary(char *fileName, cpu8080 *cpu)
 	memcpy(cpu->memory, code, size);
 	cpu->codeBeg = 0x0;
 	cpu->codeEnd = (uint16_t)(size - 0x1);
+	free(code);
 	return;
 }
 
