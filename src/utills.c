@@ -102,6 +102,32 @@ void printTwoArgs(cpu8080 *cpu, int pc)
 	}
 }
 
+void printTwoArgsBack(cpu8080 *cpu, int pc)
+{
+	uint8_t x = cpu->memory[pc + 1];
+	uint8_t y = cpu->memory[pc + 2];	
+	if ((x > 0xf) && (y > 0xf))
+	{
+		printf("0x%x%x\n", y, x);
+		return;
+	}
+	else if ((x < 0xf) && (y < 0xf))
+	{
+		printf("0x0%x0%x\n", y, x);
+		return;		
+	}
+	else if (y < 0xf)
+	{
+		printf("0x0%x%x\n", y, x);
+		return;		
+	}
+	else
+	{
+		printf("0x%x0%x\n", y, x);
+		return;		
+	}
+}
+
 void setSpecificFlagPsw(cpu8080 *cpu, int x, int cmp, bool *flag)
 {
 	if (x & cmp)

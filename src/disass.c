@@ -796,17 +796,17 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xc2:
 			printf("0x%x: jnz, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xc3:
 			printf("0x%x: jmp, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xc4:
 			printf("0x%x: cnz ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xc5:
@@ -831,7 +831,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xca:
 			printf("0x%x: jz, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xcb:
@@ -840,12 +840,12 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xcc:
 			printf("0x%x: cz, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xcd:
 			printf("0x%x: call, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xce:
@@ -866,7 +866,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xd2:
 			printf("0x%x: jnc, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xd3:
@@ -875,7 +875,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xd4:
 			printf("0x%x: cnc ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xd5:
@@ -900,7 +900,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xda:
 			printf("0x%x: jc, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xdb:
@@ -908,8 +908,8 @@ int disass(cpu8080 *cpu, int i)
 			return i + 2;
 
 		case 0xdc:
-			printf("0x%x: cc, 0x%x%x\n", i, cpu->memory[i + 2], cpu->memory[i + 1]);
-			printTwoArgs(cpu, i);
+			printf("0x%x: cc, ", i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xdd:
@@ -933,7 +933,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xe2:
 			printf("0x%x: jpo, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xe3:
@@ -942,7 +942,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xe4:
 			printf("0x%x: cpo ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xe5:
@@ -967,7 +967,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xea:
 			printf("0x%x: jpe, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xeb:
@@ -976,7 +976,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xec:
 			printf("0x%x: cpe, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xed:
@@ -1001,7 +1001,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xf2:
 			printf("0x%x: jp, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xf3:
@@ -1010,7 +1010,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xf4:
 			printf("0x%x: cp ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xf5:
@@ -1035,7 +1035,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xfa:
 			printf("0x%x: jm, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xfb:
@@ -1044,7 +1044,7 @@ int disass(cpu8080 *cpu, int i)
 
 		case 0xfc:
 			printf("0x%x: cm, ", i);
-			printTwoArgs(cpu, i);
+			printTwoArgsBack(cpu, i);
 			return i + 3;
 
 		case 0xfd:

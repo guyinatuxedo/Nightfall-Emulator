@@ -176,6 +176,8 @@ int hexDecimaltoInt(char *arg);
 
 void printTwoArgs(cpu8080 *cpu, int pc);
 
+void printTwoArgsBack(cpu8080 *cpu, int pc);
+
 void setSpecificFlagPsw(cpu8080 *cpu, int x, int cmp, bool *flag);
 
 void setCode(cpu8080 *cpu, char *code, int size);
