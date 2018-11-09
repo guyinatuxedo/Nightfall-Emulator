@@ -70,6 +70,9 @@ void menu(cpu8080 *cpu)
 			case 'x':
 				examineMemory(cpu, menuChoice);
 				break;
+			case 'y':
+				set(cpu, menuChoice);
+				break;
 			case 'z':
 				showBreakpoints(cpu->breakpoints, 0);
 				break;

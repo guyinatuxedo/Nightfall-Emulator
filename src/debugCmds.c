@@ -108,6 +108,8 @@ void printHelp(void)
 	puts("t			-	Toggle running disassembly, which disassembles instructions as they are ran");
 	puts("u			-	Dump the contents of memory to the file memory.dat");
 	puts("x <amnt> <adr>		-	Print amnt 8 bit segments starting at adr (if single argument given, amnt is 1)");
+	puts("y <target <value>	-	Set target register or address to value");
+	puts("z 			-	Show all breakpoints, and if they are activated");
 }
 
 void printRegisters(cpu8080 *cpu)
@@ -418,5 +420,82 @@ void showBreakpoints(breakpoints *breakpoint, int n)
 	{
 		printf("Breakpoint 0x%x at %x\t\t(active: %d)\n", n, breakpoint->breakp, (int)breakpoint->active);
 		return showBreakpoints(breakpoint->next, n + 1);
+	}
+}
+
+void set(cpu8080 *cpu, char *inp)
+{
+	char *arg0, *arg1;
+	int x, y, i;
+
+	arg0 = strtok(inp, " ");
+	if (arg0 == NULL)
+	{
+		puts("This command requires two arguments.");
+		return;
+	}
+
+	arg0 = strtok(NULL, " ");
+	if (arg0 == NULL)
+	{
+		puts("This command requires two arguments.");
+		return;
+	}
+
+	arg1 = strtok(NULL, " ");
+	if (arg1 == NULL)
+	{
+		puts("This command requires two arguments.");
+		return;
+	}
+	else
+	{
+		y = hexDecimaltoInt(arg1);
+		switch (*arg0)
+		{
+			case 0x61:
+				cpu->a = y;
+				break;
+
+			case 0x62:
+				cpu->b = y;
+				break;
+
+			case 0x63:
+				cpu->c = y;
+				break;
+
+			case 0x64:
+				cpu->d = y;
+				break;
+
+			case 0x65:
+				cpu->e = y;
+				break;
+
+			case 0x68:
+				cpu->h = y;
+				break;
+
+			case 0x6c:
+				cpu->l = y;
+				break;
+
+			default:
+				if (strncmp(arg0, "sp", 2) == 0)
+				{
+					cpu->sp = y;
+					return;
+				}
+				if (strncmp(arg0, "pc", 2) == 0)
+				{
+					cpu->pc = y;
+					return;
+				}
+				x = hexDecimaltoInt(arg0);
+				cpu->memory[x] = y;
+				break;
+		}
+		return;		
 	}
 }

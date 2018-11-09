@@ -235,3 +235,5 @@ void dumpMemory(cpu8080 *cpu);
 void examineMemory(cpu8080 *cpu, char *inp);
 
 void resetExecution(cpu8080 *cpu);
+
+void set(cpu8080 *cpu, char *inp);
