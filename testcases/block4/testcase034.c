@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-void testcase32(void)
+void testcase34(void)
 {
 	uint8_t x, y, z;
 	y = 0x25;
