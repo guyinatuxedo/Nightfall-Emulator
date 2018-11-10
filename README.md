@@ -332,3 +332,7 @@ http://altairclone.com/downloads/manuals/8080%20Programmers%20Manual.pdf
 ^8080 manual
 http://www.emulator101.com/
 ```
+
+## End Instruction
+
+I implemented the opcode `0xdd` to include end functionallity with the emulator. It takes a single argument indicating what you want to do, and at them moment I have only one option which is `0x66` which ends the program. So if you see `0xdd66` or `end 0x66` that ends the program.
