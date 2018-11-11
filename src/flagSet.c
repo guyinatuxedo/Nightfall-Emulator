@@ -8,7 +8,7 @@ void auxiliaryFlag(cpu8080 *cpu, uint8_t x, uint8_t y, uint8_t z)
 {
 	if (z == 0)
 	{
-		if (((x & 0x4) == 0) && (y & 0x4))
+		if (((x & 0x8) == 0) && (y & 0x8))
 		{
 			cpu->aux = true;
 		}
@@ -19,7 +19,7 @@ void auxiliaryFlag(cpu8080 *cpu, uint8_t x, uint8_t y, uint8_t z)
 	}
 	else if (z == 1)
 	{
-		if ((x & 0x4) && (y & 0x4))
+		if ((x & 0x8) && (y & 0x8))
 		{
 			cpu->aux = true;			
 		}
