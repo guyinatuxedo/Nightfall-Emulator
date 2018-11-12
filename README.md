@@ -8,8 +8,10 @@ This is a custom emulator that I wrote for the 16 bit intel 8080 architecture, t
 To compile the code, you can just use make. All of the source code is under `src`:
 
 ```
-$	cd src/
+$	git clone git@github.com:guyinatuxedo/Nightfall-Emulator.git
+$	cd Nightfall-Emulator/src/
 $	make
+gcc Nightfall.c emulate.c debugCmds.c disass.c flagSet.c math.c stack.c utills.c debugUtils.c codeExec.c mov.c -o Nightfall
 ```
 
 ## Disassembler
