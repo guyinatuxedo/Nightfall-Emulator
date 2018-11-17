@@ -95,7 +95,7 @@ int main(int argc, char **argv)
 
 	scanBinary(argv[1], cpu);
 
-	puts("Nightfall 8080 Emualtor / Debugger / Disassembler");
+	puts("Nightfall 8080 Emulator / Debugger / Disassembler");
 
 	menu(cpu);
 
